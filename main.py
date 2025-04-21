@@ -286,3 +286,27 @@ async def update_task(
     
     storage.update_task(task_id, updated_task)
     return Task(**updated_task)
+
+@app.get("/projects/{project_id}", response_model=Project)
+async def get_project(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    # Получаем проект
+    projects = storage.get_projects()
+    project = next((p for p in projects if p["id"] == project_id), None)
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    
+    # Проверяем, является ли пользователь участником проекта
+    if current_user.id not in project["members"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+    
+    return Project(**project)
