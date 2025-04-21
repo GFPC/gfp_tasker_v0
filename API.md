@@ -40,10 +40,12 @@ Response (200):
 
 Получение JWT токена для доступа к API.
 
-Request body (form-data):
-```
-username: user@example.com
-password: password123
+Request body:
+```json
+{
+    "username": "user@example.com",
+    "password": "password123"
+}
 ```
 
 Response (200):
@@ -113,6 +115,34 @@ Response (200):
     }
 ]
 ```
+
+**PUT /projects/{project_id}**
+
+Редактирование проекта. Только владелец проекта может его редактировать.
+
+Request body:
+```json
+{
+    "name": "Updated Project Name",
+    "description": "Updated project description"
+}
+```
+
+Response (200):
+```json
+{
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Updated Project Name",
+    "description": "Updated project description",
+    "owner_id": "550e8400-e29b-41d4-a716-446655440000",
+    "created_at": "2024-01-01T12:00:00",
+    "members": ["550e8400-e29b-41d4-a716-446655440000"]
+}
+```
+
+Возможные ошибки:
+- `404 Not Found` - Проект не найден
+- `403 Forbidden` - Пользователь не является владельцем проекта
 
 ### Задачи
 
@@ -209,6 +239,36 @@ Response (200):
     "assignee_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+**PUT /tasks/{task_id}**
+
+Редактирование задачи. Доступно для всех участников проекта.
+
+Request body:
+```json
+{
+    "title": "Updated Task Title",
+    "description": "Updated task description",
+    "project_id": "550e8400-e29b-41d4-a716-446655440001"
+}
+```
+
+Response (200):
+```json
+{
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "title": "Updated Task Title",
+    "description": "Updated task description",
+    "project_id": "550e8400-e29b-41d4-a716-446655440001",
+    "created_at": "2024-01-01T12:00:00",
+    "status": "todo",
+    "assignee_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+Возможные ошибки:
+- `404 Not Found` - Задача не найдена
+- `403 Forbidden` - Пользователь не имеет доступа к проекту
 
 ## Коды ошибок
 

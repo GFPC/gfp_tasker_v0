@@ -2,6 +2,7 @@ import json
 import os
 from typing import Dict, List, Any
 from pathlib import Path
+from datetime import datetime
 
 class JSONStorage:
     def __init__(self, storage_dir: str = "data"):
@@ -17,13 +18,24 @@ class JSONStorage:
                 with open(file, "w") as f:
                     json.dump([], f)
     
+    def _serialize_datetime(self, obj: Any) -> Any:
+        if isinstance(obj, datetime):
+            return obj.strftime("%Y-%m-%d %H:%M:%S")
+        return obj
+    
     def _read_file(self, file_path: Path) -> List[Dict]:
         with open(file_path, "r") as f:
             return json.load(f)
     
     def _write_file(self, file_path: Path, data: List[Dict]):
+        # Сериализуем все объекты datetime в строки
+        serialized_data = []
+        for item in data:
+            serialized_item = {k: self._serialize_datetime(v) for k, v in item.items()}
+            serialized_data.append(serialized_item)
+        
         with open(file_path, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(serialized_data, f, indent=2)
     
     def get_users(self) -> List[Dict]:
         return self._read_file(self.users_file)

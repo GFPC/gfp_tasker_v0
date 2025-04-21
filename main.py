@@ -5,6 +5,8 @@ from datetime import timedelta
 from typing import List
 import uuid
 from datetime import datetime
+from pydantic import BaseModel
+import logging
 
 from models import User, UserCreate, Project, ProjectCreate, Task, TaskCreate, Token
 from auth import (
@@ -15,6 +17,10 @@ from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from storage import JSONStorage
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Teamly API")
 
@@ -28,6 +34,10 @@ app.add_middleware(
 )
 
 storage = JSONStorage()
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 @app.post("/register", response_model=User)
 async def register(user: UserCreate):
@@ -43,17 +53,34 @@ async def register(user: UserCreate):
         "id": str(uuid.uuid4()),
         "email": user.email,
         "name": user.name,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         "hashed_password": hashed_password,
     }
     storage.save_user(user_dict)
     return User(**{k: v for k, v in user_dict.items() if k != "hashed_password"})
 
 @app.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(login_data: LoginRequest):
+    logger.info(f"Login attempt for user: {login_data.username}")
+    
     users = storage.get_users()
-    user = next((u for u in users if u["email"] == form_data.username), None)
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+    logger.info(f"Total users in storage: {len(users)}")
+    
+    user = next((u for u in users if u["email"] == login_data.username), None)
+    if not user:
+        logger.warning(f"User not found: {login_data.username}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    logger.info(f"User found: {user['email']}")
+    password_verified = verify_password(login_data.password, user["hashed_password"])
+    logger.info(f"Password verification result: {password_verified}")
+    
+    if not password_verified:
+        logger.warning(f"Invalid password for user: {login_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -64,6 +91,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     access_token = create_access_token(
         data={"sub": user["email"]}, expires_delta=access_token_expires
     )
+    logger.info(f"Token generated for user: {login_data.username}")
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/users/me", response_model=User)
@@ -190,3 +218,71 @@ async def update_task_status(
     task["status"] = status
     storage.update_task(task_id, task)
     return Task(**task)
+
+@app.put("/projects/{project_id}", response_model=Project)
+async def update_project(
+    project_id: str,
+    project_data: ProjectCreate,
+    current_user: User = Depends(get_current_active_user)
+):
+    # Получаем проект
+    projects = storage.get_projects()
+    project = next((p for p in projects if p["id"] == project_id), None)
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    
+    # Проверяем, является ли пользователь владельцем проекта
+    if project["owner_id"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project owner can edit the project",
+        )
+    
+    # Обновляем данные проекта
+    updated_project = {
+        **project,
+        "name": project_data.name,
+        "description": project_data.description,
+    }
+    
+    storage.update_project(project_id, updated_project)
+    return Project(**updated_project)
+
+@app.put("/tasks/{task_id}", response_model=Task)
+async def update_task(
+    task_id: str,
+    task_data: TaskCreate,
+    current_user: User = Depends(get_current_active_user)
+):
+    # Получаем задачу
+    tasks = storage.get_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+    
+    # Проверяем доступ к проекту
+    projects = storage.get_projects()
+    project = next((p for p in projects if p["id"] == task["project_id"]), None)
+    if not project or current_user.id not in project["members"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+    
+    # Обновляем данные задачи
+    updated_task = {
+        **task,
+        "title": task_data.title,
+        "description": task_data.description,
+    }
+    
+    storage.update_task(task_id, updated_task)
+    return Task(**updated_task)
